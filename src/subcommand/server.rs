@@ -251,6 +251,7 @@ impl Server {
         )
         .route("/range/:start/:end", get(Self::range))
         .route("/rare.txt", get(Self::rare_txt))
+        .route("/runepayload/:txid", get(Self::rune_payload))
         .route("/rune/:rune", get(Self::rune))
         .route("/runes", get(Self::runes))
         .route("/runes/balances", get(Self::runes_balances))
@@ -710,6 +711,21 @@ impl Server {
         .page(server_config)
         .into_response()
       })
+    })
+  }
+
+  async fn rune_payload(
+    Extension(index): Extension<Arc<Index>>,
+    Path(txid): Path<Txid>,
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      let transaction = index
+          .get_transaction(txid)?
+          .ok_or_not_found(|| format!("transaction {txid}"))?;
+
+      let result = Runestone::from_transaction(&transaction);
+
+      Ok(Json(result).into_response())
     })
   }
 
