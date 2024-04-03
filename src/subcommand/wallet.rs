@@ -2,7 +2,6 @@ use {
   super::*,
   crate::wallet::{batch, Wallet},
   bitcoincore_rpc::bitcoincore_rpc_json::ListDescriptorsResult,
-  reqwest::Url,
   shared_args::SharedArgs,
 };
 
@@ -17,6 +16,7 @@ pub mod mint;
 pub mod outputs;
 pub mod receive;
 pub mod restore;
+pub mod resume;
 pub mod sats;
 pub mod send;
 mod shared_args;
@@ -58,6 +58,8 @@ pub(crate) enum Subcommand {
   Receive(receive::Receive),
   #[command(about = "Restore wallet")]
   Restore(restore::Restore),
+  #[command(about = "Resume pending etchings")]
+  Resume,
   #[command(about = "List wallet satoshis")]
   Sats(sats::Sats),
   #[command(about = "Send sat or inscription")]
@@ -100,6 +102,7 @@ impl WalletCommand {
       Subcommand::Inscriptions => inscriptions::run(wallet),
       Subcommand::Mint(mint) => mint.run(wallet),
       Subcommand::Receive(receive) => receive.run(wallet),
+      Subcommand::Resume => resume::run(wallet),
       Subcommand::Sats(sats) => sats.run(wallet),
       Subcommand::Send(send) => send.run(wallet),
       Subcommand::Transactions(transactions) => transactions.run(wallet),

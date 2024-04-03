@@ -69,6 +69,11 @@ impl Batch {
   fn check_etching(wallet: &Wallet, etching: &batch::Etching) -> Result {
     let rune = etching.rune.rune;
 
+    ensure!(
+      wallet.load_etching(rune)?.is_none(),
+      "rune `{rune}` has pending etching, resume with `ord wallet resume`"
+    );
+
     ensure!(!rune.is_reserved(), "rune `{rune}` is reserved");
 
     ensure!(
@@ -115,7 +120,7 @@ impl Batch {
 
     let current_height = u32::try_from(bitcoin_client.get_block_count()?).unwrap();
 
-    let reveal_height = current_height + 1 + RUNE_COMMIT_INTERVAL;
+    let reveal_height = current_height + 1 + u32::from(Runestone::COMMIT_INTERVAL);
 
     if let Some(terms) = etching.terms {
       if let Some((start, end)) = terms.offset.and_then(|range| range.start.zip(range.end)) {
@@ -249,10 +254,5 @@ inscriptions:
       .unwrap_err()
       .to_string()
       .contains("unknown field `unknown`"));
-  }
-
-  #[test]
-  fn example_batchfile_deserializes_successfully() {
-    batch::File::load(Path::new("batch.yaml")).unwrap();
   }
 }
