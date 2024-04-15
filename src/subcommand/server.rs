@@ -769,6 +769,7 @@ impl Server {
             height: (hl, hh),
             offset: (ol, oh),
           }),
+          turbo: true
         }),
         ..default()
       };
