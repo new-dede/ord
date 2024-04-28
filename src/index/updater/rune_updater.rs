@@ -15,6 +15,7 @@ pub(super) struct RuneUpdater<'a, 'tx, 'client> {
   pub(super) sequence_number_to_rune_id: &'a mut Table<'tx, u32, RuneIdValue>,
   pub(super) statistic_to_count: &'a mut Table<'tx, u64, u64>,
   pub(super) transaction_id_to_rune: &'a mut Table<'tx, &'static TxidValue, u128>,
+  pub(super) outpoint_to_balances_persistent: &'a mut Table<'tx, &'static OutPointValue, &'static [u8]>,
 }
 
 impl<'a, 'tx, 'client> RuneUpdater<'a, 'tx, 'client> {
@@ -211,6 +212,9 @@ impl<'a, 'tx, 'client> RuneUpdater<'a, 'tx, 'client> {
 
       self
         .outpoint_to_balances
+        .insert(&outpoint.store(), buffer.as_slice())?;
+      self
+        .outpoint_to_balances_persistent
         .insert(&outpoint.store(), buffer.as_slice())?;
     }
 
