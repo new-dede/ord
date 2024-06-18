@@ -62,6 +62,7 @@ define_table! { INSCRIPTION_ID_TO_SEQUENCE_NUMBER, InscriptionIdValue, u32 }
 define_table! { INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER, i32, u32 }
 define_table! { OUTPOINT_TO_RUNE_BALANCES, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_SAT_RANGES, &OutPointValue, &[u8] }
+define_table! { OUTPOINT_TO_RUNE_BALANCES_PERSISTENT, &OutPointValue, &[u8] }
 define_table! { OUTPOINT_TO_TXOUT, &OutPointValue, TxOutValue }
 define_table! { RUNE_ID_TO_RUNE_ENTRY, RuneIdValue, RuneEntryValue }
 define_table! { RUNE_TO_RUNE_ID, u128, RuneIdValue }
@@ -310,6 +311,7 @@ impl Index {
         tx.open_table(INSCRIPTION_ID_TO_SEQUENCE_NUMBER)?;
         tx.open_table(INSCRIPTION_NUMBER_TO_SEQUENCE_NUMBER)?;
         tx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;
+        tx.open_table(OUTPOINT_TO_RUNE_BALANCES_PERSISTENT)?;
         tx.open_table(OUTPOINT_TO_TXOUT)?;
         tx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
         tx.open_table(RUNE_TO_RUNE_ID)?;
@@ -992,6 +994,43 @@ impl Index {
     let rtx = self.database.begin_read()?;
 
     let outpoint_to_balances = rtx.open_table(OUTPOINT_TO_RUNE_BALANCES)?;
+
+    let id_to_rune_entries = rtx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
+
+    let Some(balances) = outpoint_to_balances.get(&outpoint.store())? else {
+      return Ok(BTreeMap::new());
+    };
+
+    let balances_buffer = balances.value();
+
+    let mut balances = BTreeMap::new();
+    let mut i = 0;
+    while i < balances_buffer.len() {
+      let ((id, amount), length) = Index::decode_rune_balance(&balances_buffer[i..]).unwrap();
+      i += length;
+
+      let entry = RuneEntry::load(id_to_rune_entries.get(id.store())?.unwrap().value());
+
+      balances.insert(
+        entry.spaced_rune,
+        Pile {
+          amount,
+          divisibility: entry.divisibility,
+          symbol: entry.symbol,
+        },
+      );
+    }
+
+    Ok(balances)
+  }
+
+  pub fn get_tiki_rune_balances_for_output(
+    &self,
+    outpoint: OutPoint,
+  ) -> Result<BTreeMap<SpacedRune, Pile>> {
+    let rtx = self.database.begin_read()?;
+
+    let outpoint_to_balances = rtx.open_table(OUTPOINT_TO_RUNE_BALANCES_PERSISTENT)?;
 
     let id_to_rune_entries = rtx.open_table(RUNE_ID_TO_RUNE_ENTRY)?;
 
@@ -2286,6 +2325,61 @@ impl Index {
     let inscriptions = self.get_inscriptions_for_output(outpoint)?;
 
     let runes = self.get_rune_balances_for_output(outpoint)?;
+
+    let spent = self.is_output_spent(outpoint)?;
+
+    Ok(Some((
+      api::Output::new(
+        self.settings.chain(),
+        inscriptions,
+        outpoint,
+        txout.clone(),
+        indexed,
+        runes,
+        sat_ranges,
+        spent,
+      ),
+      txout,
+    )))
+  }
+
+  pub(crate) fn get_tiki_output_info(&self, outpoint: OutPoint) -> Result<Option<(api::Output, TxOut)>> {
+    let sat_ranges = self.list(outpoint)?;
+
+    let indexed;
+
+    let txout = if outpoint == OutPoint::null() || outpoint == unbound_outpoint() {
+      let mut value = 0;
+
+      if let Some(ranges) = &sat_ranges {
+        for (start, end) in ranges {
+          value += end - start;
+        }
+      }
+
+      indexed = true;
+
+      TxOut {
+        value,
+        script_pubkey: ScriptBuf::new(),
+      }
+    } else {
+      indexed = self.contains_output(&outpoint)?;
+
+      let Some(tx) = self.get_transaction(outpoint.txid)? else {
+        return Ok(None);
+      };
+
+      let Some(txout) = tx.output.into_iter().nth(outpoint.vout as usize) else {
+        return Ok(None);
+      };
+
+      txout
+    };
+
+    let inscriptions = self.get_inscriptions_for_output(outpoint)?;
+
+    let runes = self.get_tiki_rune_balances_for_output(outpoint)?;
 
     let spent = self.is_output_spent(outpoint)?;
 

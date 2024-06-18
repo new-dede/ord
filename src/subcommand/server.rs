@@ -250,6 +250,8 @@ impl Server {
         .route("/ordinal/:sat", get(Self::ordinal))
         .route("/output/:output", get(Self::output))
         .route("/outputs", post(Self::outputs))
+        .route("/tikioutput/:output", get(Self::tiki_output))
+        .route("/tikioutputs", post(Self::tiki_outputs))
         .route("/parents/:inscription_id", get(Self::parents))
         .route(
           "/parents/:inscription_id/:page",
@@ -661,6 +663,35 @@ impl Server {
     })
   }
 
+  async fn tiki_output(
+    Extension(server_config): Extension<Arc<ServerConfig>>,
+    Extension(index): Extension<Arc<Index>>,
+    Path(outpoint): Path<OutPoint>,
+    AcceptJson(accept_json): AcceptJson,
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      let (output_info, txout) = index
+        .get_tiki_output_info(outpoint)?
+        .ok_or_not_found(|| format!("output {outpoint}"))?;
+
+      Ok(if accept_json {
+        Json(output_info).into_response()
+      } else {
+        OutputHtml {
+          chain: server_config.chain,
+          inscriptions: output_info.inscriptions,
+          outpoint,
+          output: txout,
+          runes: output_info.runes,
+          sat_ranges: output_info.sat_ranges,
+          spent: output_info.spent,
+        }
+          .page(server_config)
+          .into_response()
+      })
+    })
+  }
+
   async fn outputs(
     Extension(index): Extension<Arc<Index>>,
     AcceptJson(accept_json): AcceptJson,
@@ -672,6 +703,28 @@ impl Server {
         for outpoint in outputs {
           let (output_info, _) = index
             .get_output_info(outpoint)?
+            .ok_or_not_found(|| format!("output {outpoint}"))?;
+
+          response.push(output_info);
+        }
+        Json(response).into_response()
+      } else {
+        StatusCode::NOT_FOUND.into_response()
+      })
+    })
+  }
+
+  async fn tiki_outputs(
+    Extension(index): Extension<Arc<Index>>,
+    AcceptJson(accept_json): AcceptJson,
+    Json(outputs): Json<Vec<OutPoint>>,
+  ) -> ServerResult {
+    task::block_in_place(|| {
+      Ok(if accept_json {
+        let mut response = Vec::new();
+        for outpoint in outputs {
+          let (output_info, _) = index
+            .get_tiki_output_info(outpoint)?
             .ok_or_not_found(|| format!("output {outpoint}"))?;
 
           response.push(output_info);
